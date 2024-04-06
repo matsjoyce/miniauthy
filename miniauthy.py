@@ -4,7 +4,7 @@ import json
 import os
 import pathlib
 import sys
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 import pyotp
 from cryptography import fernet
@@ -99,6 +99,38 @@ class TOTPModel(QtCore.QAbstractListModel):
         self._save()
         return len(self._totps) - 1
 
+    @QtCore.Slot(QtCore.QUrl)
+    def importFromFile(self, fname: QtCore.QUrl) -> None:
+        with pathlib.Path(fname.toLocalFile()).open("rb") as f:
+            contents = json.load(f)
+
+        def _recursiveSearch(obj: Any) -> Iterable[pyotp.TOTP]:
+            if isinstance(obj, list):
+                for item in obj:
+                    yield from _recursiveSearch(item)
+            elif isinstance(obj, dict):
+                for item in obj.values():
+                    yield from _recursiveSearch(item)
+            elif isinstance(obj, str):
+                if obj.startswith("otpauth://totp"):
+                    try:
+                        totp = pyotp.parse_uri(obj)
+                        totp.now()
+                        yield totp
+                    except ValueError:
+                        pass
+
+        totps = list(_recursiveSearch(contents))
+        if totps:
+            self.beginInsertRows(
+                QtCore.QModelIndex(),
+                len(self._totps),
+                len(self._totps) + len(totps) - 1,
+            )
+            self._totps.extend(totps)
+            self.endInsertRows()
+            self._save()
+
     def data(
         self,
         index: QtCore.QModelIndex,
@@ -112,11 +144,15 @@ class TOTPModel(QtCore.QAbstractListModel):
             return None
 
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            return (
-                self._totps[index.row()].issuer
-                + " for "
-                + self._totps[index.row()].name
-            )
+            if self._totps[index.row()].issuer:
+                if self._totps[index.row()].name:
+                    return (
+                        self._totps[index.row()].issuer
+                        + " for "
+                        + self._totps[index.row()].name
+                    )
+                return self._totps[index.row()].issuer
+            return self._totps[index.row()].name
         elif role == QtCore.Qt.ItemDataRole.UserRole:
             return self._totps[index.row()]
 
@@ -129,7 +165,7 @@ class TOTP(QtCore.QObject):
         self._index = -1
         self._code_idx = 0
         self._timer = QtCore.QTimer(self)
-        self._timer.setInterval(100)
+        self._timer.setInterval(500)
         self._timer.timeout.connect(self._update)
 
     modelChanged = QtCore.Signal()
@@ -180,18 +216,8 @@ class TOTP(QtCore.QObject):
     def name(self) -> str:
         if self._model is None or self._index == -1:
             return ""
-        return (
-            self._model.index(self._index, 0).data(QtCore.Qt.ItemDataRole.UserRole).name
-        )
-
-    @QtCore.Property(str, notify=indexChanged)
-    def issuer(self) -> str:
-        if self._model is None or self._index == -1:
-            return ""
-        return (
-            self._model.index(self._index, 0)
-            .data(QtCore.Qt.ItemDataRole.UserRole)
-            .issuer
+        return self._model.index(self._index, 0).data(
+            QtCore.Qt.ItemDataRole.DisplayRole
         )
 
     currentCodeChanged = QtCore.Signal()

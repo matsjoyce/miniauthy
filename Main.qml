@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls as QQC
+import QtQuick.Dialogs as QQD
 import QtQuick.Layouts as QQL
 import miniauthy as MiniAuthy
 
@@ -20,12 +21,15 @@ QQC.ApplicationWindow {
         model: totpModel
     }
 
-    QQL.ColumnLayout {
+    QQL.GridLayout {
         anchors.fill: parent
+        columns: 2
 
         ListView {
+            QQL.Layout.columnSpan: 2
             QQL.Layout.fillHeight: true
             QQL.Layout.fillWidth: true
+            clip: true
             model: root.totpModel
 
             delegate: QQC.Label {
@@ -60,6 +64,21 @@ QQC.ApplicationWindow {
 
             onClicked: root.adding = true
         }
+
+        QQC.Button {
+            QQL.Layout.fillWidth: true
+            text: "Import"
+
+            onClicked: importDialog.open()
+        }
+    }
+
+    QQD.FileDialog {
+        id: importDialog
+
+        nameFilters: ["JSON files (*.json)", "All files (*)"]
+
+        onAccepted: root.totpModel.importFromFile(selectedFile)
     }
 
     QQC.Pane {
@@ -74,7 +93,7 @@ QQC.ApplicationWindow {
                 QQL.Layout.columnSpan: 2
                 QQL.Layout.fillWidth: true
                 font.pixelSize: 20
-                text: "%1 for %2".arg(selectedTotp.issuer).arg(selectedTotp.name)
+                text: selectedTotp.name
                 wrapMode: Text.Wrap
             }
 
